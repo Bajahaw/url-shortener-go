@@ -3,14 +3,17 @@ package main
 import (
 	"fmt"
 	"io"
+	log2 "log"
 	"math/rand"
 	"net/http"
 	url2 "net/url"
+	"os"
 	"regexp"
 )
 
 var (
 	cache = make(map[string]string, 1000)
+	log   = log2.New(os.Stdout, "", log2.Ldate|log2.Ltime)
 )
 
 const (
@@ -24,9 +27,10 @@ func StartServer() {
 	http.HandleFunc("GET /{key}", Redirect)
 	http.HandleFunc("POST /shorten", Shorten)
 
-	err := http.ListenAndServe(addr, http.DefaultServeMux)
-	if err != nil {
-		return
+	log.Println("Starting Server at port 8080")
+	if err := http.ListenAndServe(addr, nil); err != nil {
+		fmt.Println("Server Failed:", err)
+		os.Exit(1)
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 )
 
 func TestShortenWithGetBody(t *testing.T) {
-	url := "http://url.com"
+	url := "https://url.com"
 	req := httptest.NewRequest("GET", "/shorten", strings.NewReader(url))
 	req.Header.Set("Content-Type", "text/plain")
 	rr := httptest.NewRecorder()
@@ -89,7 +89,7 @@ func TestWrongShortenPath(t *testing.T) {
 
 func TestWrongShortenPathWithQuery(t *testing.T) {
 
-	req := httptest.NewRequest("GET", "/shorten/1234567890?url=http://example.com", nil)
+	req := httptest.NewRequest("GET", "/shorten/1234567890?url=https://example.com", nil)
 	rr := httptest.NewRecorder()
 	Shorten(rr, req)
 	if rr.Code != http.StatusBadRequest {
@@ -198,7 +198,7 @@ func TestCheckThirdPartyUrl(t *testing.T) {
 }
 
 func TestCheckNonExistentKey(t *testing.T) {
-	req := httptest.NewRequest("POST", "/check", strings.NewReader(BaseURL+"/notfnd"))
+	req := httptest.NewRequest("POST", "/check", strings.NewReader(BaseURL+"notfnd"))
 	rr := httptest.NewRecorder()
 	Check(rr, req)
 	if rr.Code != http.StatusNotFound {
