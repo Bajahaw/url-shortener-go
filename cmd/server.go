@@ -58,6 +58,12 @@ func Shorten(writer http.ResponseWriter, req *http.Request) {
 	key := string(keyArray[:])
 
 	cache[key] = origin
+	if err := SaveURL(key, origin); err != nil {
+		log.Println("Failed to save URL:", err)
+		http.Error(writer, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	newUrl := BaseURL + key
 	writer.WriteHeader(http.StatusOK)
 	_, err = writer.Write([]byte(newUrl))
@@ -73,12 +79,18 @@ func Redirect(writer http.ResponseWriter, req *http.Request) {
 		http.Error(writer, "Invalid key", http.StatusBadRequest)
 		return
 	}
+
 	origin, found := cache[key]
 	if !found {
-		http.Error(writer, "Target url not found", http.StatusNotFound)
-		return
+		o, err := GetURL(key)
+		if err != nil {
+			log.Println("Failed to get URL:", err)
+			http.Error(writer, "Not Found", http.StatusNotFound)
+			return
+		}
+		origin = o
 	}
-	fmt.Printf("Redirecting from %v to: %v \n", key, origin)
+
 	http.Redirect(writer, req, origin, http.StatusFound)
 }
 
