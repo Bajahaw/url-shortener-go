@@ -21,7 +21,6 @@ const (
 )
 
 func StartServer() {
-
 	addr := fmt.Sprintf(":%d", 8080)
 	http.HandleFunc("GET /{key}", Redirect)
 	http.HandleFunc("POST /shorten", Shorten)
@@ -43,7 +42,6 @@ func Shorten(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	origin := string(body)
-
 	if _, err = url2.ParseRequestURI(origin); err != nil {
 		msg := fmt.Sprintf("Invalid URL: %v", err)
 		http.Error(writer, msg, http.StatusBadRequest)
@@ -51,7 +49,6 @@ func Shorten(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	key := genKey()
-
 	cache[key] = origin
 	if err := SaveURL(key, origin); err != nil {
 		log.Println("Failed to save URL:", err)
@@ -90,7 +87,13 @@ func Redirect(writer http.ResponseWriter, req *http.Request) {
 	http.Redirect(writer, req, origin, http.StatusFound)
 }
 
-func Health(w http.ResponseWriter, r *http.Request) {
+func Health(w http.ResponseWriter) {
+	err := pool.Ping(ctx)
+	if err != nil {
+		log.Println("Database connection failed:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(200)
 	if _, err := w.Write([]byte("OK")); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
