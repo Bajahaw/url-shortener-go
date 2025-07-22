@@ -9,11 +9,13 @@ import (
 	url2 "net/url"
 	"os"
 	"strings"
+
+	"github.com/hashicorp/golang-lru/v2"
 )
 
 var (
-	cache = make(map[string]string, 1000)
-	log   = log2.New(os.Stdout, "", log2.Ldate|log2.Ltime)
+	cache, _ = lru.New[string, string](1024)
+	log      = log2.New(os.Stdout, "", log2.Ldate|log2.Ltime)
 )
 
 const (
@@ -23,8 +25,10 @@ const (
 
 func StartServer() {
 	addr := fmt.Sprintf(":%d", 8080)
-	http.HandleFunc("GET /{key}", Redirect)
 	http.HandleFunc("POST /shorten", Shorten)
+	http.HandleFunc("POST /check", Check)
+	http.HandleFunc("GET /{key}", Redirect)
+	http.HandleFunc("GET /health", Health)
 
 	log.Println("Starting Server at port 8080")
 	if err := http.ListenAndServe(addr, nil); err != nil {
@@ -50,7 +54,7 @@ func Shorten(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	key := genKey()
-	cache[key] = origin
+	cache.Add(key, origin)
 	if err := SaveURL(key, origin); err != nil {
 		log.Println("Failed to save URL:", err)
 		http.Error(writer, "Internal Server Error", http.StatusInternalServerError)
@@ -84,7 +88,7 @@ func Redirect(writer http.ResponseWriter, req *http.Request) {
 	http.Redirect(writer, req, origin, http.StatusFound)
 }
 
-func Health(w http.ResponseWriter) {
+func Health(w http.ResponseWriter, r *http.Request) {
 	err := pool.Ping(ctx)
 	if err != nil {
 		log.Println("Database connection failed:", err)
@@ -128,14 +132,14 @@ func Check(w http.ResponseWriter, r *http.Request) {
 }
 
 func getAndCache(key string) (string, bool) {
-	target, found := cache[key]
+	target, found := cache.Get(key)
 	if !found {
 		t, err := GetURL(key)
 		if err != nil {
 			return "", false
 		}
 		target = t
-		cache[key] = target
+		cache.Add(key, t)
 	}
 	return target, true
 }
