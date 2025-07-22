@@ -8,7 +8,6 @@ import (
 	"net/http"
 	url2 "net/url"
 	"os"
-	"regexp"
 )
 
 var (
@@ -51,11 +50,7 @@ func Shorten(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var keyArray [6]byte
-	for i := 0; i < 6; i++ {
-		keyArray[i] = alphapets[rand.Intn(len(alphapets))]
-	}
-	key := string(keyArray[:])
+	key := genKey()
 
 	cache[key] = origin
 	if err := SaveURL(key, origin); err != nil {
@@ -68,13 +63,14 @@ func Shorten(writer http.ResponseWriter, req *http.Request) {
 	writer.WriteHeader(http.StatusOK)
 	_, err = writer.Write([]byte(newUrl))
 	if err != nil {
+		log.Println("Failed to write response:", err)
 		return
 	}
 }
 
 func Redirect(writer http.ResponseWriter, req *http.Request) {
 	key := req.PathValue("key")
-	if valid, _ := regexp.MatchString("[a-zA-Z]{6}", key); !valid {
+	if len(key) != 6 {
 		fmt.Println("Invalid key format:", key)
 		http.Error(writer, "Invalid key", http.StatusBadRequest)
 		return
@@ -104,4 +100,12 @@ func Health(w http.ResponseWriter, r *http.Request) {
 
 func Check(w http.ResponseWriter, r *http.Request) {
 
+}
+
+func genKey() string {
+	var keyArray [6]byte
+	for i := 0; i < 6; i++ {
+		keyArray[i] = alphapets[rand.Intn(len(alphapets))]
+	}
+	return string(keyArray[:])
 }
