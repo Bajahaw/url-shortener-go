@@ -8,6 +8,7 @@ import (
 	"net/http"
 	url2 "net/url"
 	"os"
+	"strings"
 )
 
 var (
@@ -73,15 +74,11 @@ func Redirect(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	origin, found := cache[key]
+	origin, found := getAndCache(key)
 	if !found {
-		o, err := GetURL(key)
-		if err != nil {
-			log.Println("Failed to get URL:", err)
-			http.Error(writer, "Not Found", http.StatusNotFound)
-			return
-		}
-		origin = o
+		log.Println("Target URL not found for key:", key)
+		http.Error(writer, "Target URL Not Found", http.StatusNotFound)
+		return
 	}
 
 	http.Redirect(writer, req, origin, http.StatusFound)
@@ -102,7 +99,45 @@ func Health(w http.ResponseWriter) {
 }
 
 func Check(w http.ResponseWriter, r *http.Request) {
+	closer := r.Body
+	body, err := io.ReadAll(closer)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
 
+	url := string(body)
+	key := strings.TrimPrefix(url, BaseURL)
+	if len(key) != 6 || key == url {
+		http.Error(w, "Invalid URL format", http.StatusBadRequest)
+		return
+	}
+
+	origin, found := getAndCache(key)
+	if !found {
+		http.Error(w, "Target URL Not Found", http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if _, err = w.Write([]byte(origin)); err != nil {
+		log.Println("Failed to write response:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+}
+
+func getAndCache(key string) (string, bool) {
+	target, found := cache[key]
+	if !found {
+		t, err := GetURL(key)
+		if err != nil {
+			return "", false
+		}
+		target = t
+		cache[key] = target
+	}
+	return target, true
 }
 
 func genKey() string {
