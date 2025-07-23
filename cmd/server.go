@@ -85,8 +85,8 @@ func Redirect(writer http.ResponseWriter, req *http.Request) {
 	http.Redirect(writer, req, origin, http.StatusFound)
 }
 
-func Health(w http.ResponseWriter, r *http.Request) {
-	err := pool.Ping(ctx)
+func Health(w http.ResponseWriter, _ *http.Request) {
+	_, err := pool.Query(ctx, "SELECT 1")
 	if err != nil {
 		log.Println("Database connection failed:", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
