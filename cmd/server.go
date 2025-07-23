@@ -14,13 +14,10 @@ import (
 )
 
 var (
-	cache, _ = lru.New[string, string](1024)
-	log      = log2.New(os.Stdout, "", log2.Ldate|log2.Ltime)
-)
-
-const (
+	cache, _  = lru.New[string, string](1024)
+	log       = log2.New(os.Stdout, "", log2.Ldate|log2.Ltime)
 	alphapets = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	BaseURL   = "http://localhost:8080/"
+	BaseURL   = os.Getenv("BASE_URL")
 )
 
 func StartServer() {
