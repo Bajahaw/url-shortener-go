@@ -37,6 +37,10 @@ func StartServer() {
 func Shorten(writer http.ResponseWriter, req *http.Request) {
 	const mxLen = 1024
 	reader := http.MaxBytesReader(writer, req.Body, mxLen)
+	defer func(reader io.ReadCloser) {
+		_ = reader.Close()
+	}(reader)
+
 	body, err := io.ReadAll(reader)
 	if err != nil {
 		http.Error(writer, "URL too long", http.StatusRequestEntityTooLarge)
@@ -59,12 +63,7 @@ func Shorten(writer http.ResponseWriter, req *http.Request) {
 	}
 
 	newUrl := BaseURL + key
-	writer.WriteHeader(http.StatusOK)
-	_, err = writer.Write([]byte(newUrl))
-	if err != nil {
-		log.Println("Failed to write response:", err)
-		return
-	}
+	httpTextResponse(writer, http.StatusCreated, newUrl)
 }
 
 func Redirect(writer http.ResponseWriter, req *http.Request) {
@@ -92,15 +91,16 @@ func Health(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(200)
-	if _, err := w.Write([]byte("OK")); err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
+
+	httpTextResponse(w, http.StatusOK, "OK")
 }
 
 func Check(w http.ResponseWriter, r *http.Request) {
 	closer := r.Body
+	defer func(closer io.ReadCloser) {
+		_ = closer.Close()
+	}(closer)
+
 	body, err := io.ReadAll(closer)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -120,12 +120,7 @@ func Check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	if _, err = w.Write([]byte(origin)); err != nil {
-		log.Println("Failed to write response:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
+	httpTextResponse(w, http.StatusOK, origin)
 }
 
 // CORS middleware
@@ -142,6 +137,16 @@ func CORS(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// send text response
+func httpTextResponse(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(status)
+	if _, err := w.Write([]byte(message)); err != nil {
+		log.Println("Failed to write response:", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 func getAndCache(key string) (string, bool) {
