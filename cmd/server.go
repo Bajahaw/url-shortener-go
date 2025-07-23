@@ -28,7 +28,7 @@ func StartServer() {
 	http.HandleFunc("GET /health", Health)
 
 	log.Println("Starting Server at port 8080")
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	if err := http.ListenAndServe(addr, CORS(http.DefaultServeMux)); err != nil {
 		fmt.Println("Server Failed:", err)
 		os.Exit(1)
 	}
@@ -126,6 +126,22 @@ func Check(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+}
+
+// CORS middleware
+func CORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func getAndCache(key string) (string, bool) {
