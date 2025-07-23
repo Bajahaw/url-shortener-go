@@ -8,12 +8,9 @@ import (
 )
 
 var (
-	ctx  context.Context
-	pool *pgxpool.Pool
-)
-
-const (
-	DatabaseUrl = "postgres://user:pass@localhost:5432/urls?sslmode=disable"
+	ctx         context.Context
+	pool        *pgxpool.Pool
+	DatabaseUrl = os.Getenv("DATABASE_URL")
 )
 
 func ConnectDB() {
