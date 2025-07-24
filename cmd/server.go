@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	log2 "log"
@@ -8,7 +10,10 @@ import (
 	"net/http"
 	url2 "net/url"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/hashicorp/golang-lru/v2"
 )
@@ -22,16 +27,41 @@ var (
 
 func StartServer() {
 	addr := fmt.Sprintf(":%d", 8080)
+
+	server := &http.Server{
+		Addr:         addr,
+		Handler:      CORS(http.DefaultServeMux),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
 	http.HandleFunc("POST /shorten", Shorten)
 	http.HandleFunc("POST /check", Check)
 	http.HandleFunc("GET /{key}", Redirect)
 	http.HandleFunc("GET /health", Health)
 
-	log.Println("Starting Server at port 8080")
-	if err := http.ListenAndServe(addr, CORS(http.DefaultServeMux)); err != nil {
-		fmt.Println("Server Failed:", err)
-		os.Exit(1)
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		log.Println("Starting Server at port 8080")
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("Server Failed: %v", err)
+		}
+	}()
+
+	<-stop
+
+	log.Println("Shutting down server...")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Server Shutdown Failed: %v", err)
 	}
+
+	log.Println("Server gracefully stopped")
 }
 
 func Shorten(writer http.ResponseWriter, req *http.Request) {
@@ -110,6 +140,7 @@ func Check(w http.ResponseWriter, r *http.Request) {
 	url := string(body)
 	key := strings.TrimPrefix(url, BaseURL)
 	if len(key) != 6 || key == url {
+		log.Println("Invalid URL host! 3rd party sites are not yet supported", url)
 		http.Error(w, "Invalid URL format", http.StatusBadRequest)
 		return
 	}
@@ -141,6 +172,7 @@ func CORS(next http.Handler) http.Handler {
 
 // send text response
 func httpTextResponse(w http.ResponseWriter, status int, message string) {
+	log.Println("Sending response:", status, message)
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(status)
 	if _, err := w.Write([]byte(message)); err != nil {

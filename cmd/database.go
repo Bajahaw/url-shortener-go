@@ -5,6 +5,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"os"
 	"strings"
+	"time"
 )
 
 var (
@@ -27,7 +28,9 @@ func ConnectDB() {
 
 func createTable() {
 	sql := "CREATE TABLE urls (id VARCHAR(10) PRIMARY KEY, url TEXT NOT NULL)"
-	_, err := pool.Exec(ctx, sql)
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err := pool.Exec(queryCtx, sql)
 	if err != nil {
 		if strings.Contains(err.Error(), "42P07") {
 			log.Println("Table urls already exist!")
@@ -41,7 +44,9 @@ func createTable() {
 
 func GetURL(id string) (string, error) {
 	sql := "SELECT url FROM urls WHERE id = $1"
-	row := pool.QueryRow(ctx, sql, id)
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	row := pool.QueryRow(queryCtx, sql, id)
 	var url string
 	err := row.Scan(&url)
 	if err != nil {
@@ -52,7 +57,9 @@ func GetURL(id string) (string, error) {
 
 func SaveURL(id, url string) error {
 	sql := "INSERT INTO urls (id, url) VALUES ($1, $2)"
-	_, err := pool.Exec(ctx, sql, id, url)
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err := pool.Exec(queryCtx, sql, id, url)
 	if err != nil {
 		return err
 	}

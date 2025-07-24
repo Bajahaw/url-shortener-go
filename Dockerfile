@@ -7,14 +7,14 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o main ./cmd
+RUN go build -o url-shortener-go ./cmd
 
-FROM scratch AS prod
+FROM alpine AS prod
 
 WORKDIR /app
 
-COPY --from=build /app/main /app/main
+COPY --from=build /app/url-shortener-go /app/url-shortener-go
 
 EXPOSE 8080
 
-CMD ["./main"]
+CMD ["./url-shortener-go"]
