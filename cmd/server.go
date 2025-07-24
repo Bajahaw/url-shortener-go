@@ -115,13 +115,13 @@ func Redirect(writer http.ResponseWriter, req *http.Request) {
 }
 
 func Health(w http.ResponseWriter, _ *http.Request) {
-	_, err := pool.Query(ctx, "SELECT 1")
+	rows, err := pool.Query(ctx, "SELECT 1")
 	if err != nil {
 		log.Println("Database connection failed:", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-
+	defer rows.Close()
 	httpTextResponse(w, http.StatusOK, "OK")
 }
 
