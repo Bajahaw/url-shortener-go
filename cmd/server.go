@@ -65,19 +65,13 @@ func StartServer() {
 }
 
 func Shorten(writer http.ResponseWriter, req *http.Request) {
-	const mxLen = 1024
-	reader := http.MaxBytesReader(writer, req.Body, mxLen)
-	defer func(reader io.ReadCloser) {
-		_ = reader.Close()
-	}(reader)
-
-	body, err := io.ReadAll(reader)
+	origin, err := extractBody(writer, req)
 	if err != nil {
-		http.Error(writer, "URL too long", http.StatusRequestEntityTooLarge)
+		log.Println("URL length exceeded:", err)
+		http.Error(writer, "URL length exceeded", http.StatusBadRequest)
 		return
 	}
 
-	origin := string(body)
 	if _, err = url2.ParseRequestURI(origin); err != nil {
 		msg := fmt.Sprintf("Invalid URL: %v", err)
 		http.Error(writer, msg, http.StatusBadRequest)
@@ -126,18 +120,12 @@ func Health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func Check(w http.ResponseWriter, r *http.Request) {
-	closer := r.Body
-	defer func(closer io.ReadCloser) {
-		_ = closer.Close()
-	}(closer)
-
-	body, err := io.ReadAll(closer)
+	url, err := extractBody(w, r)
 	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		log.Println("Failed to read request url:", err)
+		http.Error(w, "Invalid Request Body", http.StatusBadRequest)
 		return
 	}
-
-	url := string(body)
 	key := strings.TrimPrefix(url, BaseURL)
 	if len(key) != 6 || key == url {
 		log.Println("Invalid URL host! 3rd party sites are not yet supported", url)
@@ -170,7 +158,8 @@ func CORS(next http.Handler) http.Handler {
 	})
 }
 
-// send text response
+//////////////////////////////// HELPER FUNCTIONS ////////////////////////////////
+
 func httpTextResponse(w http.ResponseWriter, status int, message string) {
 	log.Println("Sending response:", status, message)
 	w.Header().Set("Content-Type", "text/plain")
@@ -179,6 +168,19 @@ func httpTextResponse(w http.ResponseWriter, status int, message string) {
 		log.Println("Failed to write response:", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
+}
+
+func extractBody(writer http.ResponseWriter, req *http.Request) (string, error) {
+	const mxLen = 2048
+	reader := http.MaxBytesReader(writer, req.Body, mxLen)
+	defer func(reader io.ReadCloser) {
+		err := reader.Close()
+		if err != nil {
+			log.Println("Failed to close request body:", err)
+		}
+	}(reader)
+	body, err := io.ReadAll(reader)
+	return string(body), err
 }
 
 func getAndCache(key string) (string, bool) {
