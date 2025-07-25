@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"io"
 	log2 "log"
 	"math/rand"
@@ -26,10 +27,8 @@ var (
 )
 
 func StartServer() {
-	addr := fmt.Sprintf(":%d", 8080)
-
 	server := &http.Server{
-		Addr:         addr,
+		Addr:         ":8080",
 		Handler:      CORS(http.DefaultServeMux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -45,11 +44,12 @@ func StartServer() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		log.Println("Starting Server at port 8080")
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("Server Failed: %v", err)
 		}
 	}()
+
+	log.Println("Server started on port 8080")
 
 	<-stop
 
@@ -74,6 +74,7 @@ func Shorten(writer http.ResponseWriter, req *http.Request) {
 
 	if _, err = url2.ParseRequestURI(origin); err != nil {
 		msg := fmt.Sprintf("Invalid URL: %v", err)
+		log.Println(msg)
 		http.Error(writer, msg, http.StatusBadRequest)
 		return
 	}
@@ -92,16 +93,11 @@ func Shorten(writer http.ResponseWriter, req *http.Request) {
 
 func Redirect(writer http.ResponseWriter, req *http.Request) {
 	key := req.PathValue("key")
-	if len(key) != 6 {
-		fmt.Println("Invalid key format:", key)
-		http.Error(writer, "Invalid key", http.StatusBadRequest)
-		return
-	}
 
 	origin, found := getAndCache(key)
-	if !found {
+	if !found || origin == "" {
 		log.Println("Target URL not found for key:", key)
-		http.Error(writer, "Target URL Not Found", http.StatusNotFound)
+		http.NotFound(writer, req)
 		return
 	}
 
@@ -122,20 +118,24 @@ func Health(w http.ResponseWriter, _ *http.Request) {
 func Check(w http.ResponseWriter, r *http.Request) {
 	url, err := extractBody(w, r)
 	if err != nil {
-		log.Println("Failed to read request url:", err)
-		http.Error(w, "Invalid Request Body", http.StatusBadRequest)
+		msg := "Invalid Request Body: " + err.Error()
+		log.Println(msg)
+		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
 	key := strings.TrimPrefix(url, BaseURL)
 	if len(key) != 6 || key == url {
-		log.Println("Invalid URL host! 3rd party sites are not yet supported", url)
-		http.Error(w, "Invalid URL format", http.StatusBadRequest)
+		msg := fmt.Sprintf("Invalid URL host: %s - Third party sites are not yet supported", url)
+		log.Println(msg)
+		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
 
 	origin, found := getAndCache(key)
 	if !found {
-		http.Error(w, "Target URL Not Found", http.StatusNotFound)
+		msg := "Target URL Not Found for key: " + key
+		log.Println(msg)
+		http.Error(w, msg, http.StatusNotFound)
 		return
 	}
 
@@ -158,7 +158,9 @@ func CORS(next http.Handler) http.Handler {
 	})
 }
 
+//////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////// HELPER FUNCTIONS ////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////
 
 func httpTextResponse(w http.ResponseWriter, status int, message string) {
 	log.Println("Sending response:", status, message)
@@ -188,6 +190,9 @@ func getAndCache(key string) (string, bool) {
 	if !found {
 		t, err := GetURL(key)
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				cache.Add(key, "")
+			}
 			return "", false
 		}
 		target = t
