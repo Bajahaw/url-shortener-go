@@ -12,7 +12,6 @@ import (
 	url2 "net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -123,23 +122,16 @@ func Check(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
-	key := strings.TrimPrefix(url, BaseURL)
-	if len(key) != 6 || key == url {
-		msg := fmt.Sprintf("Invalid URL host: %s - Third party sites are not yet supported", url)
+
+	location, err := checkForiegnURL(url)
+	if err != nil {
+		msg := "Failed to check origin URL: " + err.Error()
 		log.Println(msg)
 		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
 
-	origin, found := getAndCache(key)
-	if !found {
-		msg := "Target URL Not Found for key: " + key
-		log.Println(msg)
-		http.Error(w, msg, http.StatusNotFound)
-		return
-	}
-
-	httpTextResponse(w, http.StatusOK, origin)
+	httpTextResponse(w, http.StatusOK, location)
 }
 
 // CORS middleware
@@ -183,6 +175,30 @@ func extractBody(writer http.ResponseWriter, req *http.Request) (string, error) 
 	}(reader)
 	body, err := io.ReadAll(reader)
 	return string(body), err
+}
+
+func checkForiegnURL(url string) (string, error) {
+	if _, err := url2.ParseRequestURI(url); err != nil {
+		return "", err
+	}
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+
+	location := resp.Header.Get("Location")
+	if location == "" {
+		location = url
+	}
+
+	return location, nil
 }
 
 func getAndCache(key string) (string, bool) {
