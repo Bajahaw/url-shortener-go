@@ -19,6 +19,7 @@ import (
 )
 
 var (
+	Repo      = NewRepository()
 	cache, _  = lru.New[string, string](1024)
 	log       = log2.New(os.Stdout, "", log2.Ldate|log2.Ltime)
 	alphapets = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -80,14 +81,14 @@ func Shorten(writer http.ResponseWriter, req *http.Request) {
 
 	key := genKey()
 	cache.Add(key, origin)
-	if err := SaveURL(key, origin); err != nil {
+	if err := Repo.SaveURL(key, origin); err != nil {
 		log.Println("Failed to save URL:", err)
 		http.Error(writer, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	newUrl := BaseURL + key
-	httpTextResponse(writer, http.StatusCreated, newUrl)
+	httpTextResponse(writer, http.StatusOK, newUrl)
 }
 
 func Redirect(writer http.ResponseWriter, req *http.Request) {
@@ -104,13 +105,12 @@ func Redirect(writer http.ResponseWriter, req *http.Request) {
 }
 
 func Health(w http.ResponseWriter, _ *http.Request) {
-	rows, err := pool.Query(ctx, "SELECT 1")
+	_, err := Repo.GetURL("tst123")
 	if err != nil {
 		log.Println("Database connection failed:", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, "Health check failed!", http.StatusServiceUnavailable)
 		return
 	}
-	defer rows.Close()
 	httpTextResponse(w, http.StatusOK, "OK")
 }
 
@@ -123,7 +123,7 @@ func Check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	location, err := checkForiegnURL(url)
+	location, err := checkForeignURL(url)
 	if err != nil {
 		msg := "Failed to check origin URL: " + err.Error()
 		log.Println(msg)
@@ -177,7 +177,7 @@ func extractBody(writer http.ResponseWriter, req *http.Request) (string, error) 
 	return string(body), err
 }
 
-func checkForiegnURL(url string) (string, error) {
+func checkForeignURL(url string) (string, error) {
 	if _, err := url2.ParseRequestURI(url); err != nil {
 		return "", err
 	}
@@ -204,7 +204,7 @@ func checkForiegnURL(url string) (string, error) {
 func getAndCache(key string) (string, bool) {
 	target, found := cache.Get(key)
 	if !found {
-		t, err := GetURL(key)
+		t, err := Repo.GetURL(key)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				cache.Add(key, "")

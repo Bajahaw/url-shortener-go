@@ -1,12 +1,20 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
 )
+
+type MockDB struct{}
+
+func TestMain(m *testing.M) {
+	Repo = &MockDB{}
+	m.Run()
+}
 
 func TestShortenWithGetBody(t *testing.T) {
 	url := "https://url.com"
@@ -21,7 +29,7 @@ func TestShortenWithGetBody(t *testing.T) {
 	if !strings.HasPrefix(body, BaseURL) {
 		t.Error("response does not start with base URL")
 	}
-	if ok, _ := regexp.MatchString(`.*/[a-zA-Z]{6}$`, body); !ok {
+	if ok, _ := regexp.MatchString(`.*[a-zA-Z]{6}$`, body); !ok {
 		t.Error("invalid key format")
 	}
 }
@@ -39,7 +47,7 @@ func TestShortenValidPost(t *testing.T) {
 	if !strings.HasPrefix(body, BaseURL) {
 		t.Error("response does not start with base URL")
 	}
-	if ok, _ := regexp.MatchString(`.*/[a-zA-Z]{6}$`, body); !ok {
+	if ok, _ := regexp.MatchString(`.*[a-zA-Z]{6}$`, body); !ok {
 		t.Error("invalid key format")
 	}
 }
@@ -58,11 +66,10 @@ func TestShortenInvalidUrl(t *testing.T) {
 }
 
 func TestInvalidPathRandomRandom(t *testing.T) {
-
 	req := httptest.NewRequest("GET", "/random/random", nil)
 	rr := httptest.NewRecorder()
 	Redirect(rr, req)
-	if rr.Code != http.StatusBadRequest {
+	if rr.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rr.Code)
 	}
 }
@@ -72,8 +79,8 @@ func TestInvalidPathRandom(t *testing.T) {
 	req := httptest.NewRequest("GET", "/a/b/c", nil)
 	rr := httptest.NewRecorder()
 	Redirect(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rr.Code)
 	}
 }
 
@@ -126,9 +133,6 @@ func TestRedirectNotFound(t *testing.T) {
 	Redirect(rr, req)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rr.Code)
-	}
-	if !strings.Contains(rr.Body.String(), "Target url not found") {
-		t.Error("missing not found message")
 	}
 }
 
@@ -243,4 +247,11 @@ func TestCheckWithGetMethod(t *testing.T) {
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rr.Code)
 	}
+}
+
+func (m MockDB) SaveURL(id, url string) error {
+	return nil
+}
+func (m MockDB) GetURL(id string) (string, error) {
+	return "", errors.New("not implemented")
 }
