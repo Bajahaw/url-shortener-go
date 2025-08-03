@@ -15,8 +15,8 @@ var (
 )
 
 type Repository interface {
-	SaveURL(id, url string) error
-	GetURL(id string) (string, error)
+	SaveURL(url string) (int64, error)
+	GetURL(id int64) (string, error)
 }
 type Database struct{}
 
@@ -37,7 +37,7 @@ func ConnectDB() {
 }
 
 func createTable() {
-	sql := "CREATE TABLE urls (id VARCHAR(10) PRIMARY KEY, url TEXT NOT NULL)"
+	sql := "CREATE TABLE urls (id SERIAL PRIMARY KEY, url TEXT NOT NULL)"
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, err := pool.Exec(queryCtx, sql)
@@ -52,7 +52,7 @@ func createTable() {
 	}
 }
 
-func (db *Database) GetURL(id string) (string, error) {
+func (db *Database) GetURL(id int64) (string, error) {
 	sql := "SELECT url FROM urls WHERE id = $1"
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -65,13 +65,15 @@ func (db *Database) GetURL(id string) (string, error) {
 	return url, nil
 }
 
-func (db *Database) SaveURL(id, url string) error {
-	sql := "INSERT INTO urls (id, url) VALUES ($1, $2)"
+func (db *Database) SaveURL(url string) (int64, error) {
+	sql := "INSERT INTO urls (url) VALUES ($1) RETURNING id"
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	_, err := pool.Exec(queryCtx, sql, id, url)
+	rows := pool.QueryRow(queryCtx, sql, url)
+	var id int64
+	err := rows.Scan(&id)
 	if err != nil {
-		return err
+		return -1, err
 	}
-	return nil
+	return id, nil
 }

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -29,9 +28,6 @@ func TestShortenWithGetBody(t *testing.T) {
 	if !strings.HasPrefix(body, BaseURL) {
 		t.Error("response does not start with base URL")
 	}
-	if ok, _ := regexp.MatchString(`.*[a-zA-Z]{6}$`, body); !ok {
-		t.Error("invalid key format")
-	}
 }
 
 func TestShortenValidPost(t *testing.T) {
@@ -46,9 +42,6 @@ func TestShortenValidPost(t *testing.T) {
 	body := rr.Body.String()
 	if !strings.HasPrefix(body, BaseURL) {
 		t.Error("response does not start with base URL")
-	}
-	if ok, _ := regexp.MatchString(`.*[a-zA-Z]{6}$`, body); !ok {
-		t.Error("invalid key format")
 	}
 }
 
@@ -249,9 +242,9 @@ func TestCheckWithGetMethod(t *testing.T) {
 	}
 }
 
-func (m MockDB) SaveURL(id, url string) error {
-	return nil
+func (m MockDB) SaveURL(_ string) (int64, error) {
+	return 1, nil
 }
-func (m MockDB) GetURL(id string) (string, error) {
+func (m MockDB) GetURL(_ int64) (string, error) {
 	return "", errors.New("not implemented")
 }

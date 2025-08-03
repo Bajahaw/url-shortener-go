@@ -7,7 +7,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"io"
 	log2 "log"
-	"math/rand"
 	"net/http"
 	url2 "net/url"
 	"os"
@@ -19,11 +18,10 @@ import (
 )
 
 var (
-	Repo      = NewRepository()
-	cache, _  = lru.New[string, string](1024)
-	log       = log2.New(os.Stdout, "", log2.Ldate|log2.Ltime)
-	alphapets = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	BaseURL   = os.Getenv("BASE_URL")
+	Repo     = NewRepository()
+	cache, _ = lru.New[int64, string](1024)
+	log      = log2.New(os.Stdout, "", log2.Ldate|log2.Ltime)
+	BaseURL  = os.Getenv("BASE_URL")
 )
 
 func StartServer() {
@@ -79,20 +77,28 @@ func Shorten(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	key := genKey()
-	cache.Add(key, origin)
-	if err := Repo.SaveURL(key, origin); err != nil {
+	id, err := Repo.SaveURL(origin)
+	if err != nil {
 		log.Println("Failed to save URL:", err)
 		http.Error(writer, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
+	cache.Add(id, origin)
+	key := EncodeInt64(id)
 	newUrl := BaseURL + key
+
 	httpTextResponse(writer, http.StatusOK, newUrl)
 }
 
 func Redirect(writer http.ResponseWriter, req *http.Request) {
-	key := req.PathValue("key")
+	path := req.PathValue("key")
+	key, err := DecodeString(path)
+	if err != nil {
+		log.Println("Decoding error:", err)
+		http.NotFound(writer, req)
+		return
+	}
 
 	origin, found := getAndCache(key)
 	if !found || origin == "" {
@@ -105,7 +111,7 @@ func Redirect(writer http.ResponseWriter, req *http.Request) {
 }
 
 func Health(w http.ResponseWriter, _ *http.Request) {
-	_, err := Repo.GetURL("tst123")
+	_, err := Repo.GetURL(1)
 	if err != nil {
 		log.Println("Database connection failed:", err)
 		http.Error(w, "Health check failed!", http.StatusServiceUnavailable)
@@ -155,7 +161,6 @@ func CORS(next http.Handler) http.Handler {
 //////////////////////////////////////////////////////////////////////////////////
 
 func httpTextResponse(w http.ResponseWriter, status int, message string) {
-	log.Println("Sending response:", status, message)
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(status)
 	if _, err := w.Write([]byte(message)); err != nil {
@@ -201,26 +206,19 @@ func checkForeignURL(url string) (string, error) {
 	return location, nil
 }
 
-func getAndCache(key string) (string, bool) {
-	target, found := cache.Get(key)
-	if !found {
-		t, err := Repo.GetURL(key)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				cache.Add(key, "")
-			}
-			return "", false
-		}
-		target = t
-		cache.Add(key, t)
+func getAndCache(key int64) (string, bool) {
+	if target, found := cache.Get(key); found {
+		return target, true
 	}
-	return target, true
-}
 
-func genKey() string {
-	var keyArray [6]byte
-	for i := 0; i < 6; i++ {
-		keyArray[i] = alphapets[rand.Intn(len(alphapets))]
+	target, err := Repo.GetURL(key)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			cache.Add(key, "")
+		}
+		return "", false
 	}
-	return string(keyArray[:])
+
+	cache.Add(key, target)
+	return target, true
 }
