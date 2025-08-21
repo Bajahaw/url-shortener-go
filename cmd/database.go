@@ -37,7 +37,7 @@ func ConnectDB() {
 }
 
 func createTable() {
-	sql := "CREATE TABLE urls (id SERIAL PRIMARY KEY, url TEXT NOT NULL)"
+	sql := "CREATE TABLE urls (id SERIAL PRIMARY KEY, url TEXT UNIQUE NOT NULL)"
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, err := pool.Exec(queryCtx, sql)
