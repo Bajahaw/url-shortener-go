@@ -72,7 +72,8 @@ func (db *Database) SaveURL(url string) (int64, error) {
 	rows := pool.QueryRow(queryCtx, sql, url)
 	var id int64
 	err := rows.Scan(&id)
-	if err != nil {
+	// Ignore duplicate key error
+	if err != nil && !strings.Contains(err.Error(), "23505") {
 		return -1, err
 	}
 	return id, nil
