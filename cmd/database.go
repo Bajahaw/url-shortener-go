@@ -29,10 +29,10 @@ func ConnectDB() {
 	var err error
 	pool, err = pgxpool.New(ctx, databaseUrl)
 	if err != nil {
-		log.Println("DB Connection Failed:", err)
+		log.Error("DB Connection Failed:", err)
 		os.Exit(1)
 	}
-	log.Println("DB Connected Successfully")
+	log.Info("DB Connected Successfully")
 	createTable()
 }
 
@@ -42,13 +42,14 @@ func createTable() {
 	defer cancel()
 	_, err := pool.Exec(queryCtx, sql)
 	if err != nil {
+		// Ignore "table already exists" error
 		if strings.Contains(err.Error(), "42P07") {
-			log.Println("Table urls already exist!")
+			log.Warn("Table urls already exist!")
 		} else {
-			log.Println("Failed to create table:", err)
+			log.Error("Failed to create table:", err)
 		}
 	} else {
-		log.Println("Table created")
+		log.Info("Table created")
 	}
 }
 

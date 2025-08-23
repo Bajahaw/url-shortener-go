@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	logger "github.com/charmbracelet/log"
 	"github.com/jackc/pgx/v5"
 	"io"
-	log2 "log"
 	"net/http"
 	url2 "net/url"
 	"os"
@@ -20,14 +20,16 @@ import (
 var (
 	Repo     = NewRepository()
 	cache, _ = lru.New[int64, string](1024)
-	log      = log2.New(os.Stdout, "", log2.Ldate|log2.Ltime)
-	BaseURL  = os.Getenv("BASE_URL")
+	log      = logger.NewWithOptions(os.Stdout, logger.Options{
+		ReportTimestamp: true,
+	})
+	BaseURL = os.Getenv("BASE_URL")
 )
 
 func StartServer() {
 	server := &http.Server{
 		Addr:         ":8080",
-		Handler:      CORS(http.DefaultServeMux),
+		Handler:      CORS(Logged(http.DefaultServeMux)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -47,11 +49,11 @@ func StartServer() {
 		}
 	}()
 
-	log.Println("Server started on port 8080")
+	log.Info("Server started on port 8080")
 
 	<-stop
 
-	log.Println("Shutting down server...")
+	log.Warn("Shutting down server...")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -59,27 +61,27 @@ func StartServer() {
 		log.Fatalf("Server Shutdown Failed: %v", err)
 	}
 
-	log.Println("Server gracefully stopped")
+	log.Info("Server gracefully stopped")
 }
 
 func Shorten(writer http.ResponseWriter, req *http.Request) {
 	origin, err := extractBody(writer, req)
 	if err != nil {
-		log.Println("URL length exceeded:", err)
+		log.Warn("URL length exceeded:", err)
 		http.Error(writer, "URL length exceeded", http.StatusBadRequest)
 		return
 	}
 
 	if _, err = url2.ParseRequestURI(origin); err != nil {
 		msg := fmt.Sprintf("Invalid URL: %v", err)
-		log.Println(msg)
+		log.Warn(msg)
 		http.Error(writer, msg, http.StatusBadRequest)
 		return
 	}
 
 	id, err := Repo.SaveURL(origin)
 	if err != nil {
-		log.Println("Failed to save URL:", err)
+		log.Error("Failed to save URL:", err)
 		http.Error(writer, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -95,14 +97,14 @@ func Redirect(writer http.ResponseWriter, req *http.Request) {
 	path := req.PathValue("key")
 	key, err := DecodeString(path)
 	if err != nil {
-		log.Println("Decoding error:", err)
+		log.Warn("Decoding error:", err)
 		http.NotFound(writer, req)
 		return
 	}
 
 	origin, found := getAndCache(key)
 	if !found || origin == "" {
-		log.Println("Target URL not found for key:", key)
+		log.Warn("Target URL not found for key:", key)
 		http.NotFound(writer, req)
 		return
 	}
@@ -113,7 +115,7 @@ func Redirect(writer http.ResponseWriter, req *http.Request) {
 func Health(w http.ResponseWriter, _ *http.Request) {
 	_, err := Repo.GetURL(1)
 	if err != nil {
-		log.Println("Database connection failed:", err)
+		log.Error("Database connection failed:", err)
 		http.Error(w, "Health check failed!", http.StatusServiceUnavailable)
 		return
 	}
@@ -124,7 +126,7 @@ func Check(w http.ResponseWriter, r *http.Request) {
 	url, err := extractBody(w, r)
 	if err != nil {
 		msg := "Invalid Request Body: " + err.Error()
-		log.Println(msg)
+		log.Warn(msg)
 		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
@@ -132,7 +134,7 @@ func Check(w http.ResponseWriter, r *http.Request) {
 	location, err := checkForeignURL(url)
 	if err != nil {
 		msg := "Failed to check origin URL: " + err.Error()
-		log.Println(msg)
+		log.Warn(msg)
 		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
@@ -164,7 +166,7 @@ func httpTextResponse(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(status)
 	if _, err := w.Write([]byte(message)); err != nil {
-		log.Println("Failed to write response:", err)
+		log.Error("Failed to write response:", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
@@ -175,7 +177,7 @@ func extractBody(writer http.ResponseWriter, req *http.Request) (string, error) 
 	defer func(reader io.ReadCloser) {
 		err := reader.Close()
 		if err != nil {
-			log.Println("Failed to close request body:", err)
+			log.Warn("Failed to close request body:", err)
 		}
 	}(reader)
 	body, err := io.ReadAll(reader)
@@ -221,4 +223,25 @@ func getAndCache(key int64) (string, bool) {
 
 	cache.Add(key, target)
 	return target, true
+}
+
+type Recorder struct {
+	http.ResponseWriter
+	Code int
+}
+
+func (r *Recorder) WriteHeader(code int) {
+	r.Code = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func Logged(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		recorder := &Recorder{ResponseWriter: w, Code: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		duration := time.Since(start)
+
+		log.Infof("/%s %d %s %s", r.Method, recorder.Code, duration, r.URL.Path)
+	})
 }
